@@ -1,0 +1,40 @@
+# Binaries
+/bin/
+/server
+*.exe
+*.exe~
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Service account files
+service-account*.json
+*.key.json
+*-key.json
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Temporary files
+/temp/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Go build artifacts
+*.test
+*.out
+/dist/
+/build/
+/coverage.html
+
+# OS files
+.DS_Store
+Thumbs.db

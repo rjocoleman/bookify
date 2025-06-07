@@ -1,0 +1,6 @@
+bin/
+temp/
+*.db
+.git
+.vscode
+README.md

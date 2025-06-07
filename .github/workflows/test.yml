@@ -1,0 +1,76 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Install templ
+      run: go install github.com/a-h/templ/cmd/templ@latest
+
+    - name: Generate templates
+      run: templ generate
+
+    - name: Format check
+      run: |
+        go fmt ./...
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "Code is not properly formatted. Please run 'go fmt ./...'"
+          exit 1
+        fi
+
+    - name: Install golangci-lint
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: latest
+        skip-cache: false
+        skip-save-cache: false
+
+    - name: Run tests
+      run: go test -race -coverprofile=coverage.out ./...
+
+    - name: Generate coverage report
+      run: go tool cover -html=coverage.out -o coverage.html
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: |
+          coverage.out
+          coverage.html
+
+    - name: Coverage Summary
+      run: |
+        echo "## Test Coverage Summary" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        go tool cover -func=coverage.out >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY

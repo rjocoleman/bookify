@@ -122,7 +122,7 @@ func (q *QueueService) processJob(job *db.Job) {
 	}
 
 	cleanFilename := q.processor.CleanFilename(job.OriginalFilename)
-	driveURL, err := q.drive.UploadFile(account.FolderID, outputPath, cleanFilename)
+	driveURL, err := q.drive.UploadFile(account, outputPath, cleanFilename)
 	if err != nil {
 		q.failJob(job, fmt.Sprintf("Upload failed: %v", err))
 		return

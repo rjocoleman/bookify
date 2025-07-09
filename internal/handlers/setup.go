@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"bookify/internal/db"
@@ -40,32 +41,30 @@ func (h *Handlers) IndexPage(c echo.Context) error {
 }
 
 func (h *Handlers) SetupPage(c echo.Context) error {
-	// Get service account email for display
-	serviceAccountEmail := h.Drive.GetServiceAccountEmail()
-	return render(c, templates.SetupPage(serviceAccountEmail))
+	return render(c, templates.SetupPage())
 }
 
 func (h *Handlers) CreateAccount(c echo.Context) error {
 	name := strings.TrimSpace(c.FormValue("name"))
 	folderID := strings.TrimSpace(c.FormValue("folder_id"))
-	serviceAccountEmail := h.Drive.GetServiceAccountEmail()
 
 	if name == "" || folderID == "" {
-		return render(c, templates.SetupPageWithError("All fields are required", serviceAccountEmail))
+		return render(c, templates.SetupPageWithError("All fields are required"))
 	}
 
-	// Test if we can access the folder with the service account
-	err := h.Drive.TestFolderAccess(folderID)
-	if err != nil {
-		return render(c, templates.SetupPageWithError("Cannot access folder. Make sure you've shared it with the service account email: "+serviceAccountEmail+". Error: "+err.Error(), serviceAccountEmail))
+	// Check if account name already exists
+	_, err := h.DB.GetAccountByName(name)
+	if err == nil {
+		return render(c, templates.SetupPageWithError("An account with this name already exists"))
 	}
 
-	_, err = h.DB.CreateAccount(name, folderID)
-	if err != nil {
-		return render(c, templates.SetupPageWithError("Failed to create account: "+err.Error(), serviceAccountEmail))
-	}
+	// Redirect to OAuth flow with account setup parameters
+	// URL encode the parameters
+	params := make(url.Values)
+	params.Set("account_name", name)
+	params.Set("folder_id", folderID)
+	redirectURL := "/oauth/start?" + params.Encode()
 
-	// Use HTMX redirect header instead of HTTP redirect
-	c.Response().Header().Set("HX-Redirect", "/")
+	c.Response().Header().Set("HX-Redirect", redirectURL)
 	return c.NoContent(http.StatusOK)
 }

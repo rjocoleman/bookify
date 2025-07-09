@@ -21,7 +21,7 @@ func TestHandlers_SetupPage_Simple(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := services.NewDriveService()
+	driveService := services.NewDriveService(dbService)
 
 	handlers := &Handlers{
 		DB:    dbService,
@@ -51,7 +51,7 @@ func TestHandlers_IndexPage_NoAccounts(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := services.NewDriveService()
+	driveService := services.NewDriveService(dbService)
 
 	handlers := &Handlers{
 		DB:    dbService,
@@ -86,7 +86,7 @@ func TestHandlers_IndexPage_WithAccounts(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := services.NewDriveService()
+	driveService := services.NewDriveService(dbService)
 
 	// Create a test account
 	_, err = dbService.CreateAccount("Test Account", "folder123")

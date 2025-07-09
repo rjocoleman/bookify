@@ -1,6 +1,6 @@
 # Bookify - EPUB to KEPUB Converter
 
-Bookify is a web-based service that automatically converts EPUB files to KEPUB format (optimized for Kobo e-readers) and uploads them to Google Drive. It features a drag-and-drop interface, background processing, and real-time status updates.
+Bookify is a web-based service that automatically converts EPUB files to KEPUB format (optimized for Kobo e-readers) and uploads them to Google Drive using OAuth authentication. It features a drag-and-drop interface, background processing, and real-time status updates.
 
 ## Features
 
@@ -15,7 +15,8 @@ Bookify is a web-based service that automatically converts EPUB files to KEPUB f
 ## Prerequisites
 
 - Go 1.21 or higher
-- Google Cloud Console account with a service account
+- A Google account
+- Access to Google Cloud Console for OAuth setup
 - Google Drive API enabled
 
 ## Installation
@@ -45,28 +46,26 @@ templ generate
 go build -o bin/bookify ./cmd/server
 ```
 
-### 2. Google Drive Service Account Setup
+### 2. Google Drive OAuth Setup
 
-See [SERVICE_ACCOUNT_SETUP.md](SERVICE_ACCOUNT_SETUP.md) for detailed instructions.
+See [OAUTH_SETUP.md](OAUTH_SETUP.md) for detailed instructions.
 
 **Quick Setup:**
 
-1. Create a service account in Google Cloud Console
-2. Download the JSON key file
-3. Enable Google Drive API
-4. Share your Google Drive folder with the service account email
-5. Set the environment variable with the key file path or content
+1. Create OAuth 2.0 credentials in Google Cloud Console
+2. Set up the OAuth consent screen
+3. Add `http://localhost:8080/oauth/callback` as redirect URI
+4. Set the Client ID and Client Secret as environment variables
+5. Authorize Bookify through the web interface
 
 ### 3. Environment Variables
 
-Set one of these for authentication:
+Set these for OAuth authentication:
 
 ```bash
-# Option 1: Path to service account key file (recommended)
-export GOOGLE_SERVICE_ACCOUNT_KEY_PATH="/path/to/service-account-key.json"
-
-# Option 2: Service account key JSON content
-export GOOGLE_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}'
+# Required: OAuth credentials from Google Cloud Console
+export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
 ```
 
 Optional configuration:
@@ -82,8 +81,9 @@ export TEMP_DIR="./temp"            # Optional, defaults to ./temp
 ### Local Development
 
 ```bash
-# Set service account key path
-export GOOGLE_SERVICE_ACCOUNT_KEY_PATH="/path/to/service-account-key.json"
+# Set OAuth credentials
+export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
 
 # Run the application
 ./bin/bookify
@@ -97,11 +97,11 @@ Navigate to `http://localhost:8080`
 # Build the Docker image
 docker build -t bookify .
 
-# Run with Docker (using key file)
+# Run with Docker
 docker run -d \
   -p 8080:8080 \
-  -v /path/to/service-account-key.json:/app/key.json:ro \
-  -e GOOGLE_SERVICE_ACCOUNT_KEY_PATH="/app/key.json" \
+  -e GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
+  -e GOOGLE_CLIENT_SECRET="your-client-secret" \
   -v $(pwd)/data:/root \
   --name bookify \
   bookify
@@ -115,9 +115,11 @@ docker run -d \
 2. Enter:
    - **Account Name**: A friendly name for this Google Drive account (e.g., "My Kobo Library")
    - **Folder ID**: The Google Drive folder ID where files will be uploaded
-3. Click "Create Account"
+3. Click "Authorize with Google"
+4. Sign in with your Google account and grant Bookify permission to upload files
+5. You'll be redirected back to Bookify once authorized
 
-**Note**: Make sure you've shared the Google Drive folder with your service account email before setting up.
+**Note**: Files will be uploaded to your personal Google Drive storage quota.
 
 ### Uploading Books
 
@@ -145,33 +147,39 @@ All configuration is done through environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` | Path to service account JSON key file | - |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | Service account JSON key content | - |
+| `GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID | - |
+| `GOOGLE_CLIENT_SECRET` | OAuth 2.0 Client Secret | - |
 | `PORT` | Server port | 8080 |
 | `DB_PATH` | SQLite database path | ./kepub.db |
 | `TEMP_DIR` | Temporary file directory | ./temp |
 | `MAX_FILE_SIZE` | Maximum upload size | 100MB |
 
-**Note**: You must set either `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` or `GOOGLE_SERVICE_ACCOUNT_KEY`.
+**Note**: You must set both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
 ## Troubleshooting
 
-### "Cannot access folder"
+### "Folder access failed"
 
-The service account doesn't have access to the folder.
+Bookify cannot access the specified Google Drive folder.
 
 **Solution**:
-1. Find your service account email in the JSON key file (look for `client_email`)
-2. Share the Google Drive folder with this email address
-3. Make sure the service account has "Editor" permissions
+1. Verify the folder ID is correct (from the folder URL)
+2. Make sure the folder exists in your Google Drive
+3. Ensure you're authorizing with the correct Google account
 
-### "No service account key configured"
+### "OAuth configuration missing"
 
-Bookify can't find the service account credentials.
+Bookify can't find the OAuth credentials.
 
-**Solution**: Make sure you've set either:
-- `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` with a valid file path, or
-- `GOOGLE_SERVICE_ACCOUNT_KEY` with the JSON content
+**Solution**: Make sure you've set both:
+- `GOOGLE_CLIENT_ID` with your OAuth client ID
+- `GOOGLE_CLIENT_SECRET` with your OAuth client secret
+
+### Token Expiration
+
+OAuth tokens may expire after extended periods.
+
+**Solution**: Return to the setup page and re-authorize with Google
 
 ### Upload failures
 

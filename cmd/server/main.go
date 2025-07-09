@@ -24,16 +24,15 @@ func main() {
 	}
 
 	dbService := db.NewService(database)
-	driveService := services.NewDriveService()
+	driveService := services.NewDriveService(dbService)
 
-	// Test service account configuration
-	log.Println("Testing service account configuration...")
-	err = driveService.TestConnection()
-	if err != nil {
-		log.Printf("WARNING: Service account test failed: %v", err)
-		log.Println("Make sure GOOGLE_SERVICE_ACCOUNT_KEY_PATH or GOOGLE_SERVICE_ACCOUNT_KEY is set")
+	// Check OAuth configuration
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	if clientID == "" || clientSecret == "" {
+		log.Println("WARNING: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set for OAuth authentication")
 	} else {
-		log.Println("✓ Service account authentication successful")
+		log.Println("✓ OAuth configuration found")
 	}
 
 	queueService := services.NewQueueService(dbService, driveService)
@@ -44,17 +43,23 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
-	handlers := &handlers.Handlers{
+	h := &handlers.Handlers{
 		DB:    dbService,
 		Drive: driveService,
 	}
 
-	e.GET("/", handlers.IndexPage)
-	e.GET("/setup", handlers.SetupPage)
-	e.POST("/setup", handlers.CreateAccount)
-	e.POST("/upload", handlers.UploadHandler)
-	e.GET("/api/queue", handlers.QueueStatusAPI)
-	e.GET("/api/job/:id", handlers.JobStatusAPI)
+	oauthHandlers := handlers.NewOAuthHandlers(dbService)
+
+	e.GET("/", h.IndexPage)
+	e.GET("/setup", h.SetupPage)
+	e.POST("/setup", h.CreateAccount)
+	e.POST("/upload", h.UploadHandler)
+	e.GET("/api/queue", h.QueueStatusAPI)
+	e.GET("/api/job/:id", h.JobStatusAPI)
+
+	// OAuth routes
+	e.GET("/oauth/start", oauthHandlers.StartOAuth)
+	e.GET("/oauth/callback", oauthHandlers.OAuthCallback)
 
 	tempDir := os.Getenv("TEMP_DIR")
 	if tempDir == "" {

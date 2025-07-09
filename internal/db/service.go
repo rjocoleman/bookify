@@ -30,6 +30,14 @@ func (s *Service) CreateAccount(name, folderID string) (*Account, error) {
 	return account, err
 }
 
+func (s *Service) CreateAccountWithOAuth(account *Account) error {
+	return s.db.Create(account).Error
+}
+
+func (s *Service) UpdateAccount(account *Account) error {
+	return s.db.Save(account).Error
+}
+
 func (s *Service) GetAccount(id uint) (*Account, error) {
 	var account Account
 	err := s.db.First(&account, id).Error

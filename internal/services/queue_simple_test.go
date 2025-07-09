@@ -19,7 +19,7 @@ func TestSimpleQueueService(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := NewDriveService()
+	driveService := NewDriveService(dbService)
 
 	queue := NewQueueService(dbService, driveService)
 	if queue == nil {
@@ -44,7 +44,7 @@ func TestQueueService_StartStop(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := NewDriveService()
+	driveService := NewDriveService(dbService)
 	queue := NewQueueService(dbService, driveService)
 
 	// Start the worker in a goroutine
@@ -72,7 +72,7 @@ func TestQueueService_CleanupOldFiles(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := NewDriveService()
+	driveService := NewDriveService(dbService)
 
 	queue := &QueueService{
 		db:        dbService,
@@ -123,7 +123,7 @@ func TestQueueService_ProcessNextJob_NoJobs(t *testing.T) {
 	}
 
 	dbService := db.NewService(testDB)
-	driveService := NewDriveService()
+	driveService := NewDriveService(dbService)
 	queue := NewQueueService(dbService, driveService)
 
 	// Should not panic when no jobs exist

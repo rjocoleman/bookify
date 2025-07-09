@@ -5,58 +5,70 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
+
+	"bookify/internal/db"
 )
 
 type DriveService struct {
-	serviceAccountKey []byte
+	dbService    *db.Service
+	oauth2Config *oauth2.Config
 }
 
-func NewDriveService() *DriveService {
-	// Try to load service account key from file path first
-	keyPath := os.Getenv("GOOGLE_SERVICE_ACCOUNT_KEY_PATH")
-	if keyPath != "" {
-		log.Printf("Loading service account key from file: %s", keyPath)
-		keyData, err := os.ReadFile(keyPath)
-		if err == nil {
-			log.Println("✓ Service account key loaded from file")
-			return &DriveService{
-				serviceAccountKey: keyData,
-			}
-		}
-		log.Printf("Failed to read service account key file: %v", err)
+func NewDriveService(dbService *db.Service) *DriveService {
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+
+	if clientID == "" || clientSecret == "" {
+		log.Println("WARNING: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set for OAuth")
 	}
 
-	// Fall back to reading key directly from environment variable
-	keyJSON := os.Getenv("GOOGLE_SERVICE_ACCOUNT_KEY")
-	if keyJSON != "" {
-		log.Println("Loading service account key from environment variable")
-		return &DriveService{
-			serviceAccountKey: []byte(keyJSON),
-		}
+	return &DriveService{
+		dbService: dbService,
+		oauth2Config: &oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  "http://localhost:8080/oauth/callback",
+			Scopes: []string{
+				drive.DriveScope,
+			},
+			Endpoint: google.Endpoint,
+		},
 	}
-
-	// No service account key found
-	log.Println("WARNING: No service account key found. Set GOOGLE_SERVICE_ACCOUNT_KEY_PATH or GOOGLE_SERVICE_ACCOUNT_KEY")
-	return &DriveService{}
 }
 
-func (d *DriveService) getClient() (*drive.Service, error) {
-	if len(d.serviceAccountKey) == 0 {
-		return nil, fmt.Errorf("no service account key configured")
+func (d *DriveService) getOAuthClient(account *db.Account) (*drive.Service, error) {
+	if account.AccessToken == "" || account.RefreshToken == "" {
+		return nil, fmt.Errorf("account not authenticated with OAuth")
 	}
 
-	config, err := google.JWTConfigFromJSON(d.serviceAccountKey, drive.DriveScope)
+	token := &oauth2.Token{
+		AccessToken:  account.AccessToken,
+		RefreshToken: account.RefreshToken,
+		Expiry:       account.TokenExpiry,
+		TokenType:    "Bearer",
+	}
+
+	tokenSource := d.oauth2Config.TokenSource(context.Background(), token)
+	newToken, err := tokenSource.Token()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse service account key: %w", err)
+		return nil, fmt.Errorf("failed to refresh token: %w", err)
 	}
 
-	log.Printf("Service account email: %s", config.Email)
+	if newToken.AccessToken != token.AccessToken {
+		account.AccessToken = newToken.AccessToken
+		account.TokenExpiry = newToken.Expiry
+		if err := d.dbService.UpdateAccount(account); err != nil {
+			log.Printf("Failed to update refreshed token: %v", err)
+		}
+	}
 
-	client := config.Client(context.Background())
+	client := d.oauth2Config.Client(context.Background(), newToken)
 	service, err := drive.NewService(context.Background(), option.WithHTTPClient(client))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Drive service: %w", err)
@@ -65,8 +77,8 @@ func (d *DriveService) getClient() (*drive.Service, error) {
 	return service, nil
 }
 
-func (d *DriveService) UploadFile(folderID, filePath, fileName string) (string, error) {
-	service, err := d.getClient()
+func (d *DriveService) UploadFile(account *db.Account, filePath, fileName string) (string, error) {
+	service, err := d.getOAuthClient(account)
 	if err != nil {
 		return "", err
 	}
@@ -83,10 +95,13 @@ func (d *DriveService) UploadFile(folderID, filePath, fileName string) (string, 
 
 	driveFile := &drive.File{
 		Name:    fileName,
-		Parents: []string{folderID},
+		Parents: []string{account.FolderID},
 	}
 
-	res, err := service.Files.Create(driveFile).Media(file).Do()
+	res, err := service.Files.Create(driveFile).
+		Media(file).
+		SupportsAllDrives(true).
+		Do()
 	if err != nil {
 		return "", fmt.Errorf("failed to upload file: %w", err)
 	}
@@ -95,8 +110,8 @@ func (d *DriveService) UploadFile(folderID, filePath, fileName string) (string, 
 	return shareURL, nil
 }
 
-func (d *DriveService) TestConnection() error {
-	service, err := d.getClient()
+func (d *DriveService) TestConnection(account *db.Account) error {
+	service, err := d.getOAuthClient(account)
 	if err != nil {
 		return err
 	}
@@ -109,16 +124,18 @@ func (d *DriveService) TestConnection() error {
 	return nil
 }
 
-// TestFolderAccess verifies the service account has access to a specific folder
-func (d *DriveService) TestFolderAccess(folderID string) error {
-	service, err := d.getClient()
+func (d *DriveService) TestFolderAccess(account *db.Account) error {
+	service, err := d.getOAuthClient(account)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Testing access to folder ID: %s", folderID)
+	log.Printf("Testing access to folder ID: %s", account.FolderID)
 
-	file, err := service.Files.Get(folderID).Fields("id, name, mimeType, owners").Do()
+	file, err := service.Files.Get(account.FolderID).
+		Fields("id, name, mimeType, owners").
+		SupportsAllDrives(true).
+		Do()
 	if err != nil {
 		log.Printf("Google API error details: %v", err)
 		return fmt.Errorf("failed to access folder: %w", err)
@@ -128,16 +145,10 @@ func (d *DriveService) TestFolderAccess(folderID string) error {
 	return nil
 }
 
-// GetServiceAccountEmail returns the email address of the configured service account
-func (d *DriveService) GetServiceAccountEmail() string {
-	if len(d.serviceAccountKey) == 0 {
-		return "No service account configured"
+func (d *DriveService) RefreshTokenIfNeeded(account *db.Account) error {
+	if time.Now().After(account.TokenExpiry) {
+		_, err := d.getOAuthClient(account)
+		return err
 	}
-
-	config, err := google.JWTConfigFromJSON(d.serviceAccountKey, drive.DriveScope)
-	if err != nil {
-		return "Error reading service account"
-	}
-
-	return config.Email
+	return nil
 }

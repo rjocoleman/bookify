@@ -2,110 +2,113 @@ package services
 
 import (
 	"os"
-	"strings"
 	"testing"
+	"time"
 
+	"bookify/internal/db"
 	"bookify/internal/testutil"
 )
 
 func TestNewDriveService_Basic(t *testing.T) {
-	service := NewDriveService()
+	service := NewDriveService(&db.Service{})
 	if service == nil {
-		t.Errorf("NewDriveService() returned nil")
+		t.Fatal("NewDriveService() returned nil")
+	}
+	// Verify it's initialized with the mock DB service
+	if service.dbService == nil {
+		t.Errorf("NewDriveService() didn't initialize dbService")
 	}
 }
 
-func TestDriveService_GetServiceAccountEmail_NoKey(t *testing.T) {
-	service := &DriveService{serviceAccountKey: nil}
-	email := service.GetServiceAccountEmail()
-
-	expected := "No service account configured"
-	if email != expected {
-		t.Errorf("GetServiceAccountEmail() = %v, want %v", email, expected)
+func TestDriveService_TestConnection_NoAuth(t *testing.T) {
+	service := &DriveService{
+		dbService: &db.Service{},
 	}
-}
-
-func TestDriveService_GetServiceAccountEmail_ValidKey(t *testing.T) {
-	validKey := `{
-		"type": "service_account",
-		"project_id": "test-project",
-		"private_key_id": "test-key-id",
-		"private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC...\n-----END PRIVATE KEY-----\n",
-		"client_email": "valid-test@test-project.iam.gserviceaccount.com",
-		"client_id": "123456789",
-		"auth_uri": "https://accounts.google.com/o/oauth2/auth",
-		"token_uri": "https://oauth2.googleapis.com/token"
-	}`
-
-	service := &DriveService{serviceAccountKey: []byte(validKey)}
-	email := service.GetServiceAccountEmail()
-
-	expected := "valid-test@test-project.iam.gserviceaccount.com"
-	if email != expected {
-		t.Errorf("GetServiceAccountEmail() = %v, want %v", email, expected)
+	account := &db.Account{
+		AccessToken:  "",
+		RefreshToken: "",
 	}
-}
-
-func TestDriveService_TestConnection_NoKey(t *testing.T) {
-	service := &DriveService{serviceAccountKey: nil}
-	err := service.TestConnection()
+	err := service.TestConnection(account)
 
 	if err == nil {
-		t.Errorf("TestConnection() expected error with no key, got nil")
+		t.Errorf("TestConnection() expected error with no auth, got nil")
 	}
 }
 
-func TestDriveService_TestFolderAccess_NoKey(t *testing.T) {
-	service := &DriveService{serviceAccountKey: nil}
-	err := service.TestFolderAccess("test-folder-id")
+func TestDriveService_TestFolderAccess_NoAuth(t *testing.T) {
+	service := &DriveService{
+		dbService: &db.Service{},
+	}
+	account := &db.Account{
+		FolderID:     "test-folder-id",
+		AccessToken:  "",
+		RefreshToken: "",
+	}
+	err := service.TestFolderAccess(account)
 
 	if err == nil {
-		t.Errorf("TestFolderAccess() expected error with no key, got nil")
+		t.Errorf("TestFolderAccess() expected error with no auth, got nil")
 	}
 }
 
-func TestDriveService_UploadFile_NoKey(t *testing.T) {
-	service := &DriveService{serviceAccountKey: nil}
+func TestDriveService_UploadFile_NoAuth(t *testing.T) {
+	service := &DriveService{
+		dbService: &db.Service{},
+	}
+	account := &db.Account{
+		FolderID:     "test-folder-id",
+		AccessToken:  "",
+		RefreshToken: "",
+	}
 	filePath := testutil.CreateInvalidFile(t, "test.txt")
 
-	url, err := service.UploadFile("folder-id", filePath, "test.txt")
+	url, err := service.UploadFile(account, filePath, "test.txt")
 
 	if err == nil {
-		t.Errorf("UploadFile() expected error with no key, got nil")
+		t.Errorf("UploadFile() expected error with no auth, got nil")
 	}
 	if url != "" {
 		t.Errorf("UploadFile() expected empty URL on error, got %v", url)
 	}
 }
 
-// Integration test that requires real service account credentials
-func TestDriveService_Integration(t *testing.T) {
-	keyPath := os.Getenv("GOOGLE_SERVICE_ACCOUNT_KEY_PATH")
-	keyJSON := os.Getenv("GOOGLE_SERVICE_ACCOUNT_KEY")
-
-	if keyPath == "" && keyJSON == "" {
-		t.Skip("Skipping integration test: no service account credentials configured")
+func TestDriveService_RefreshTokenIfNeeded_NotExpired(t *testing.T) {
+	service := &DriveService{
+		dbService: &db.Service{},
+	}
+	account := &db.Account{
+		AccessToken:  "test-token",
+		RefreshToken: "test-refresh",
+		TokenExpiry:  time.Now().Add(1 * time.Hour), // Not expired
 	}
 
-	service := NewDriveService()
-	if len(service.serviceAccountKey) == 0 {
-		t.Skip("Skipping integration test: no valid service account key loaded")
-	}
-
-	// Test service account email
-	email := service.GetServiceAccountEmail()
-	if email == "No service account configured" || email == "Error reading service account" {
-		t.Errorf("GetServiceAccountEmail() = %v, expected valid email", email)
-	}
-	if !strings.Contains(email, "@") {
-		t.Errorf("GetServiceAccountEmail() = %v, doesn't look like an email", email)
-	}
-
-	// Test connection (may fail with test credentials, that's OK)
-	err := service.TestConnection()
+	err := service.RefreshTokenIfNeeded(account)
 	if err != nil {
-		t.Logf("TestConnection() failed (expected for test credentials): %v", err)
-	} else {
-		t.Log("TestConnection() succeeded")
+		t.Errorf("RefreshTokenIfNeeded() unexpected error: %v", err)
+	}
+}
+
+func TestDriveService_RefreshTokenIfNeeded_Expired(t *testing.T) {
+	// Set temporary environment variables for the test
+	oldClientID := os.Getenv("GOOGLE_CLIENT_ID")
+	oldClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	_ = os.Setenv("GOOGLE_CLIENT_ID", "test-client-id")
+	_ = os.Setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+	defer func() {
+		_ = os.Setenv("GOOGLE_CLIENT_ID", oldClientID)
+		_ = os.Setenv("GOOGLE_CLIENT_SECRET", oldClientSecret)
+	}()
+
+	service := NewDriveService(&db.Service{})
+	account := &db.Account{
+		AccessToken:  "test-token",
+		RefreshToken: "test-refresh",
+		TokenExpiry:  time.Now().Add(-1 * time.Hour), // Expired
+	}
+
+	// This will fail without a valid OAuth server, which is expected
+	err := service.RefreshTokenIfNeeded(account)
+	if err == nil {
+		t.Errorf("RefreshTokenIfNeeded() expected error with expired token and test OAuth config")
 	}
 }

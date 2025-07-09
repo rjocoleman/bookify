@@ -8,12 +8,16 @@ import (
 )
 
 type Account struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"uniqueIndex;not null" json:"name"`
-	FolderID  string    `gorm:"not null" json:"folder_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Jobs      []Job     `gorm:"foreignKey:AccountID" json:"-"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Name         string    `gorm:"uniqueIndex;not null" json:"name"`
+	FolderID     string    `gorm:"not null" json:"folder_id"`
+	AccessToken  string    `gorm:"size:2048" json:"-"`
+	RefreshToken string    `gorm:"size:512" json:"-"`
+	TokenExpiry  time.Time `json:"-"`
+	UserEmail    string    `json:"user_email"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Jobs         []Job     `gorm:"foreignKey:AccountID" json:"-"`
 }
 
 type Job struct {

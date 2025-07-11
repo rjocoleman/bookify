@@ -49,26 +49,18 @@ func (q *QueueService) Stop() {
 }
 
 func (q *QueueService) processNextJob() {
-	jobs, err := q.db.ListRecentJobs(1)
+	job, err := q.db.GetNextQueuedJob()
 	if err != nil {
-		log.Printf("Failed to get jobs: %v", err)
+		log.Printf("Failed to get next queued job: %v", err)
 		return
 	}
 
-	var queuedJob *db.Job
-	for _, job := range jobs {
-		if job.Status == "queued" {
-			queuedJob = &job
-			break
-		}
-	}
-
-	if queuedJob == nil {
+	if job == nil {
 		return
 	}
 
-	log.Printf("Processing job %s: %s", queuedJob.ID, queuedJob.OriginalFilename)
-	q.processJob(queuedJob)
+	log.Printf("Processing job %s: %s", job.ID, job.OriginalFilename)
+	q.processJob(job)
 }
 
 func (q *QueueService) processJob(job *db.Job) {

@@ -98,3 +98,15 @@ func (s *Service) MarkJobFailed(jobID string, errorMsg string) error {
 		"error":  errorMsg,
 	}).Error
 }
+
+func (s *Service) GetNextQueuedJob() (*Job, error) {
+	var job Job
+	err := s.db.Preload("Account").Where("status = ?", "queued").Order("created_at asc").First(&job).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}

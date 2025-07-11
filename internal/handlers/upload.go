@@ -40,7 +40,10 @@ func (h *Handlers) UploadHandler(c echo.Context) error {
 	}
 
 	var jobIDs []string
-	tempDir := "./temp"
+	tempDir := h.TempDir
+	if tempDir == "" {
+		tempDir = "./temp"
+	}
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return render(c, templates.UploadError("Failed to create temp directory"))
 	}

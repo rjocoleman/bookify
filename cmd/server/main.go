@@ -43,9 +43,18 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
+	tempDir := os.Getenv("TEMP_DIR")
+	if tempDir == "" {
+		tempDir = "./temp"
+	}
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		log.Printf("Warning: Failed to create temp directory: %v", err)
+	}
+
 	h := &handlers.Handlers{
-		DB:    dbService,
-		Drive: driveService,
+		DB:      dbService,
+		Drive:   driveService,
+		TempDir: tempDir,
 	}
 
 	oauthHandlers := handlers.NewOAuthHandlers(dbService)
@@ -60,14 +69,6 @@ func main() {
 	// OAuth routes
 	e.GET("/oauth/start", oauthHandlers.StartOAuth)
 	e.GET("/oauth/callback", oauthHandlers.OAuthCallback)
-
-	tempDir := os.Getenv("TEMP_DIR")
-	if tempDir == "" {
-		tempDir = "./temp"
-	}
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		log.Printf("Warning: Failed to create temp directory: %v", err)
-	}
 
 	go queueService.StartWorker()
 	go queueService.StartCleanupWorker()

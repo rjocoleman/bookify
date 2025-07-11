@@ -14,8 +14,9 @@ import (
 )
 
 type Handlers struct {
-	DB    *db.Service
-	Drive *services.DriveService
+	DB      *db.Service
+	Drive   *services.DriveService
+	TempDir string
 }
 
 func render(c echo.Context, template templ.Component) error {
